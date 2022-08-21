@@ -1,0 +1,79 @@
+from keras.layers import Input, Lambda, Dense, Flatten, Reshape, GRU, Concatenate, GlobalAveragePooling2D
+from keras.models import Model
+from keras.preprocessing import image
+import tensorflow as tf
+from keras.preprocessing.image import ImageDataGenerator
+from keras.models import Sequential
+import numpy as np
+from glob import glob
+import matplotlib.pyplot as plt
+
+def step_decay(epoch):
+	initial_lrate = 0.0003
+	drop = 15
+	epochs_drop = 20.0
+	lrate = initial_lrate * math.pow(drop, math.floor((1+epoch)/epochs_drop))
+	return lrate
+
+def focal_loss(y_true, y_pred, gamma=2., alpha=.25):
+  y_true = tf.cast(y_true, tf.float32)
+  epsilon = K.epsilon()
+  y_pred = K.clip(y_pred, epsilon, 1.0 - epsilon)
+  p_t = tf.where(K.equal(y_true, 1), y_pred, 1 - y_pred)
+  alpha_factor = K.ones_like(y_true) * alpha
+  alpha_t = tf.where(K.equal(y_true, 1), alpha_factor, 1 - alpha_factor)
+  cross_entropy = -K.log(p_t)
+  weight = alpha_t * K.pow((1 - p_t), gamma)
+  loss = weight * cross_entropy
+  loss = K.mean(K.sum(loss, axis=1))
+  return loss
+
+weights_alexnet = 'path_of_alexnet_weights'
+
+image_input = Input(shape=(224, 224, 1), name='full_xray')
+seg_input = Input(shape=(224, 224, 1), name='lung_regions')
+
+alex1 = AlexNet(weights='weights_alexnet',
+                  include_top=False,
+                  input_shape=(224, 224, 1))(image_input)
+
+alex2 = AlexNet(weights='weights_alexnet',
+                  include_top=False,
+                  input_shape=(224, 224, 1))(seg_input)
+
+local_branch = Flatten()(alex1) 
+local_branch = Dense(14, activation='relu')(local_branch)
+local_branch = tf.expand_dims(local_branch, -1)
+local_branch = Residual_GRU(local_branch)
+
+
+global_branch = Flatten()(alex2) 
+global_branch = Dense(14, activation='relu')(global_branch)
+global_branch = tf.expand_dims(global_branch, -1)
+global_branch = Residual_GRU(global_branch)
+
+concat = Concatenate(axis=1)([local_branch, global_branch])
+
+prediction = Dense(14, activation='sigmoid')(concat)
+
+
+# create a model object
+model = Model([image_input, seg_input], prediction)
+
+# view the structure of the model
+model.summary()
+
+
+# tell the model what cost and optimization method to use
+model.compile(
+  loss='focal_loss',
+  optimizer=tf.keras.optimizers.SGD(learning_rate= 0.0003, momentum=0.7),
+  metrics=['accuracy']
+)
+
+
+callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=10, restore_best_weights=True)
+learning_rate = tf.keras.callbacks.LearningRateScheduler(step_decay)
+
+
+history = model.fit(x=x_train, y=y_train, epochs=150, batch_size=8, validation_data=(x_val, y_val), callbacks=[callback, learning_rate],verbose=0)
