@@ -30,6 +30,19 @@ def focal_loss(y_true, y_pred, gamma=2., alpha=.25):
 
 weights_alexnet = 'path_of_alexnet_weights'
 
+def Residual_GRU(inputs):
+  x1 = GRU(14, return_sequences=True)(inputs)
+  x2 = GRU(14, return_sequences=True)(x1)
+  x3 = Concatenate(axis=1)([x1, x2])
+
+  x4 = GRU(14, return_sequences=True)(x3)
+  x5 = GRU(14, return_sequences=True)(x4)
+  x6 = Concatenate(axis=1)([x4,x5])
+
+  x7 = GRU(14)(x6)
+  return x7
+
+
 image_input = Input(shape=(224, 224, 1), name='full_xray')
 seg_input = Input(shape=(224, 224, 1), name='lung_regions')
 
